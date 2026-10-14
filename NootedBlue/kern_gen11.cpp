@@ -22,7 +22,10 @@ static KernelPatcher::KextInfo kextG11FBT {"com.xxxxx.driver.AppleIntelTGLGraphi
 
 static KernelPatcher::KextInfo kextG11HW {"com.apple.driver.AppleIntelICLGraphics", &pathG11HW, 1, {}, {},
     KernelPatcher::KextInfo::Unloaded};
-static KernelPatcher::KextInfo kextG11HWT {"com.apple.driver.AppleIntelTGLGraphics", &pathG11HWT, 1, {}, {},
+// The staged external donor is deliberately namespaced com.xxxxx.driver.
+// Register that actual ID for the two possible donor locations; Lilu matches
+// by CFBundleIdentifier before the path is used to select the loaded image.
+static KernelPatcher::KextInfo kextG11HWT {"com.xxxxx.driver.AppleIntelTGLGraphics", &pathG11HWT, 1, {}, {},
 	KernelPatcher::KextInfo::Unloaded};
 static KernelPatcher::KextInfo kextG11HWTe {"com.xxxxx.driver.AppleIntelTGLGraphics", &pathG11HWTe, 1, {}, {},
 	KernelPatcher::KextInfo::Unloaded};
@@ -573,9 +576,11 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		
 		
 	} else if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
-		//tgl
-		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics kext ENTER index=%zu source=%s", index, kextG11HWT.loadIndex == index ? "System" : "Library");
-		auto kext=kextG11HWT.loadIndex == index ? kextG11HWT: kextG11HWTe;
+		// TGL donor. Both location registrations use the same real donor ID;
+		// select one deterministic descriptor for lookup patches because the
+		// binary is identical and Lilu has already identified the load index.
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics kext ENTER index=%zu donor-id=com.xxxxx.driver.AppleIntelTGLGraphics", index);
+		auto kext=kextG11HWTe;
 		
 		
 		KernelPatcher::RouteRequest requests[] = {
