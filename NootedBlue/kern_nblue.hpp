@@ -46,6 +46,7 @@ class NBlue {
 	uint32_t pciRevision {0};
 	bool tglid;
 	bool iclid;
+	bool tglDriverPersonalitiesPublished {false};
 	u8 edid[0x80];
 	bool edidok;
 	

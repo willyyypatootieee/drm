@@ -120,15 +120,18 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 	
 	dyldpatches.processPatcher(patcher);
 
-	// Publish only the two TGL donor personalities once, as a standalone
-	// catalogue transaction.  Do not interpose every IOCatalogue addDrivers call:
-	// those calls originate from unrelated kexts during boot and their arrays must
-	// never be reordered or modified by this graphics experiment.
-	publishTGLDriverPersonalities();
+	// The donor driver is patched in Gen11::processKext before this class
+	// publishes its two matching personalities.  Publishing here would allow a
+	// native donor instance to match before NootedBlue has installed its routes.
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "patcher READY; personality publication deferred until TGL graphics is patched");
 }
 
 void NBlue::publishTGLDriverPersonalities()
 {
+	if (this->tglDriverPersonalitiesPublished) {
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "personality publish SKIPPED already-published");
+		return;
+	}
 	if (!(this->tglid || this->iclid) || !gIOCatalogue) {
 		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "personality publish SKIPPED gpu=%d catalogue=%d", this->tglid || this->iclid, gIOCatalogue != nullptr);
 		return;
@@ -197,6 +200,7 @@ void NBlue::publishTGLDriverPersonalities()
 
 	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "personality publish CALL count=2 match=9A49+46A6");
 	const bool result = gIOCatalogue->addDrivers(array, true);
+	this->tglDriverPersonalitiesPublished = result;
 	SYSLOG("NBLUE-TRACE", "personality publish RETURN result=%d", result);
 	array->release();
 	OSSafeReleaseNULL(fbObject);

@@ -694,7 +694,10 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		
 		
 		DBGLOG("nblue", "Loaded AppleIntelTGLGraphics!");
-		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics PATCHED");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics PATCHED; publishing deferred donor personalities");
+		// This is deliberately after all accelerator routes and binary patches.
+		// The transaction is one-shot and does not modify unrelated catalogue calls.
+		NBlue::callback->publishTGLDriverPersonalities();
 		return true;
 	}
 

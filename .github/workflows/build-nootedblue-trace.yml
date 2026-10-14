@@ -55,8 +55,8 @@ jobs:
           lipo -archs "$binary" | grep -Fx x86_64
           strings "$binary" | grep -F 'NBLUE-TRACE' >/dev/null
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent "$kext" dist/NootedBlue-ADLP-DIRECT-PUBLISH-TRACE.kext.zip
-          shasum -a 256 dist/NootedBlue-ADLP-DIRECT-PUBLISH-TRACE.kext.zip | tee dist/SHA256SUMS.txt
+          ditto -c -k --sequesterRsrc --keepParent "$kext" dist/NootedBlue-ADLP-DEFERRED-PUBLISH-TRACE.kext.zip
+          shasum -a 256 dist/NootedBlue-ADLP-DEFERRED-PUBLISH-TRACE.kext.zip | tee dist/SHA256SUMS.txt
           shasum -a 256 "$binary" | tee -a dist/SHA256SUMS.txt
           {
             echo "source_commit=$(git rev-parse HEAD)"
@@ -78,7 +78,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NootedBlue-ADLP-DIRECT-PUBLISH-TRACE-${{ github.sha }}
+          name: NootedBlue-ADLP-DEFERRED-PUBLISH-TRACE-${{ github.sha }}
           path: dist/
           if-no-files-found: error
           retention-days: 30
