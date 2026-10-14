@@ -54,6 +54,7 @@ class NBlue {
 	
     void init();
     void processPatcher(KernelPatcher &patcher);
+    void publishTGLDriverPersonalities();
     bool processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 	
 	IOSimpleLock *nlock;
@@ -86,8 +87,6 @@ class NBlue {
 	
 //private:
 	
-	static bool wrapAddDrivers(void* const self, OSArray* const array, const bool doNubMatching);
-	mach_vm_address_t orgAddDrivers{0};
 	
     
 	

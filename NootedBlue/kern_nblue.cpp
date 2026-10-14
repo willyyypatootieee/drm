@@ -119,150 +119,91 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 	
 	
 	dyldpatches.processPatcher(patcher);
-	
-	KernelPatcher::RouteRequest request{"__ZN11IOCatalogue10addDriversEP7OSArrayb", wrapAddDrivers,
-										this->orgAddDrivers};
-	PANIC_COND(!patcher.routeMultipleLong(KernelPatcher::KernelID, &request, 1), "DriverInjector",
-			   "Failed to route addDrivers");
-	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "patcher READY addDrivers route installed");
-	
-	
-	
+
+	// Publish only the two TGL donor personalities once, as a standalone
+	// catalogue transaction.  Do not interpose every IOCatalogue addDrivers call:
+	// those calls originate from unrelated kexts during boot and their arrays must
+	// never be reordered or modified by this graphics experiment.
+	publishTGLDriverPersonalities();
 }
 
-bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool doNubMatching)
+void NBlue::publishTGLDriverPersonalities()
 {
-	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers ENTER input-count=%u nub=%d tgl=%d icl=%d", array ? array->getCount() : 0, doNubMatching, callback ? callback->tglid : 0, callback ? callback->iclid : 0);
-	OSArray *tdrivers= array;
-	bool doNub=doNubMatching;
-	int ok=0;
-	int tcap=0;
-	vnode_t vnode = NULLVP;
-	vfs_context_t ctxt = vfs_context_create(nullptr);
-	errno_t err = vnode_lookup("/usr/bin/sudo", 0, &vnode, ctxt);
-	if (!err) vnode_put(vnode);
-	vfs_context_rele(ctxt);
-	if (!err) ok=1;
-	
-	
-	if (ok && (NBlue::callback->tglid || NBlue::callback->iclid)) { //not running mac os installer
-		
-		
-		int ok2=0;
-			ok=0;
-			vnode = NULLVP;
-			ctxt = vfs_context_create(nullptr);
-			err = vnode_lookup("/Library/Extensions/AppleIntelTGLGraphicsFramebuffer.kext/Contents/MacOS/AppleIntelTGLGraphicsFramebuffer", 0, &vnode, ctxt);
-			if (!err) vnode_put(vnode);
-			vfs_context_rele(ctxt);
-			if (!err) ok=1;
-			if (!NBlue::callback->tglid ) ok=0;
-			if (ok) ok2=1;
-		
-	
-		if (NBlue::callback->tglid || NBlue::callback->iclid) {
-
-				const auto driversXML = getFWByName(ok ? "Driverf2.xml":"Driverf1.xml");
-				auto *dataNull = new char[driversXML.size + 1];
-				memcpy(dataNull, driversXML.data, driversXML.size);
-				dataNull[driversXML.size] = 0;
-				OSString *errStr = nullptr;
-				auto *dataUnserialized = OSUnserializeXML(dataNull, driversXML.size + 1, &errStr);
-				delete[] dataNull;
-				PANIC_COND(!dataUnserialized, "NRed", "Failed to unserialize Drivers.xml: %s",
-						   errStr ? errStr->getCStringNoCopy() : "Unspecified");
-				auto *drivers = OSDynamicCast(OSDictionary, dataUnserialized);
-				PANIC_COND(!drivers, "NRed", "Failed to cast Drivers.xml data");
-				auto* Match = OSDynamicCast(OSString, drivers->getObject("IOPCIPrimaryMatch"));
-				if (Match->getLength()>0){
-					tcap++;
-					tdrivers->ensureCapacity(tcap);
-					tdrivers->setObject(tcap-1,drivers);
-					doNub=true;
-				} else ok=0;
-				OSSafeReleaseNULL(dataUnserialized);
-				IOFree(driversXML.data, driversXML.size);
-		}
-		if (NBlue::callback->tglid || NBlue::callback->iclid) {
-				ok=0;
-				int sle=-1;
-				vnode = NULLVP;
-				ctxt = vfs_context_create(nullptr);
-				err = vnode_lookup("/System/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics", 0, &vnode, ctxt);
-				if (!err) vnode_put(vnode);
-				vfs_context_rele(ctxt);
-				if (!err) ok=1;
-				if (!err) sle=1;
-			
-					if (!ok) {
-						vnode = NULLVP;
-						ctxt = vfs_context_create(nullptr);
-						err = vnode_lookup("/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics", 0, &vnode, ctxt);
-					   if (!err) vnode_put(vnode);
-					   vfs_context_rele(ctxt);
-					   if (!err) ok=1;
-						if (!err) sle=0;
-					}
-			if (!NBlue::callback->tglid ) ok=0;
-			
-			if (ok && sle>=0){
-				const auto driversXML = getFWByName(sle ? "Drivera2.xml": "Drivera3.xml");
-				auto *dataNull = new char[driversXML.size + 1];
-				memcpy(dataNull, driversXML.data, driversXML.size);
-				dataNull[driversXML.size] = 0;
-				OSString *errStr = nullptr;
-				auto *dataUnserialized = OSUnserializeXML(dataNull, driversXML.size + 1, &errStr);
-				delete[] dataNull;
-				PANIC_COND(!dataUnserialized, "NRed", "Failed to unserialize Drivers.xml: %s",
-						   errStr ? errStr->getCStringNoCopy() : "Unspecified");
-				auto *drivers = OSDynamicCast(OSDictionary, dataUnserialized);
-				PANIC_COND(!drivers, "NRed", "Failed to cast Drivers.xml data");
-				auto* Match = OSDynamicCast(OSString, drivers->getObject("IOPCIPrimaryMatch"));
-				if (Match->getLength()>0){
-					tcap++;
-					tdrivers->ensureCapacity(tcap);
-					tdrivers->setObject(tcap-1,drivers);
-					doNub=true;
-				}
-				OSSafeReleaseNULL(dataUnserialized);
-				IOFree(driversXML.data, driversXML.size);
-			}
-			else if (!ok2 && NBlue::callback->iclid)
-			{
-				const auto driversXML = getFWByName("Drivera1.xml");
-				auto *dataNull = new char[driversXML.size + 1];
-				memcpy(dataNull, driversXML.data, driversXML.size);
-				dataNull[driversXML.size] = 0;
-				OSString *errStr = nullptr;
-				auto *dataUnserialized = OSUnserializeXML(dataNull, driversXML.size + 1, &errStr);
-				delete[] dataNull;
-				PANIC_COND(!dataUnserialized, "NRed", "Failed to unserialize Drivers.xml: %s",
-						   errStr ? errStr->getCStringNoCopy() : "Unspecified");
-				auto *drivers = OSDynamicCast(OSDictionary, dataUnserialized);
-				PANIC_COND(!drivers, "NRed", "Failed to cast Drivers.xml data");
-				auto* Match = OSDynamicCast(OSString, drivers->getObject("IOPCIPrimaryMatch"));
-				if (Match->getLength()>0){
-					tcap++;
-					tdrivers->ensureCapacity(tcap);
-					tdrivers->setObject(tcap-1,drivers);
-					doNub=true;
-				}
-				OSSafeReleaseNULL(dataUnserialized);
-				IOFree(driversXML.data, driversXML.size);
-			}
-		}
-		
+	if (!(this->tglid || this->iclid) || !gIOCatalogue) {
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "personality publish SKIPPED gpu=%d catalogue=%d", this->tglid || this->iclid, gIOCatalogue != nullptr);
+		return;
 	}
 
-	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers CALL injected-count=%d nub=%d", tcap, doNub);
-	auto ret = FunctionCast(wrapAddDrivers, callback->orgAddDrivers)(self, array, doNub);
-	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers RETURN ret=%d", ret);
-	return ret;
+	auto *driversXMLFB = getFWByName(this->tglid ? "Driverf2.xml" : "Driverf1.xml");
+	auto *driversXMLHW = getFWByName(this->tglid ? "Drivera3.xml" : "Drivera1.xml");
+	if (!driversXMLFB.data || !driversXMLHW.data) {
+		SYSLOG("NBLUE-TRACE", "personality publish FAILED: embedded profile unavailable");
+		IOFree(driversXMLFB.data, driversXMLFB.size);
+		IOFree(driversXMLHW.data, driversXMLHW.size);
+		return;
+	}
+
+	// OSUnserializeXML reads a C string; make explicit NUL-terminated copies of
+	// the embedded blobs before releasing their firmware allocations.
+	auto *fbXML = new char[driversXMLFB.size + 1];
+	auto *hwXML = new char[driversXMLHW.size + 1];
+	memcpy(fbXML, driversXMLFB.data, driversXMLFB.size);
+	memcpy(hwXML, driversXMLHW.data, driversXMLHW.size);
+	fbXML[driversXMLFB.size] = 0;
+	hwXML[driversXMLHW.size] = 0;
+	OSString *errFB = nullptr;
+	OSString *errHW = nullptr;
+	auto *fbObject = OSUnserializeXML(fbXML, driversXMLFB.size + 1, &errFB);
+	auto *hwObject = OSUnserializeXML(hwXML, driversXMLHW.size + 1, &errHW);
+	delete[] fbXML;
+	delete[] hwXML;
+	IOFree(driversXMLFB.data, driversXMLFB.size);
+	IOFree(driversXMLHW.data, driversXMLHW.size);
+	auto *fb = OSDynamicCast(OSDictionary, fbObject);
+	auto *hw = OSDynamicCast(OSDictionary, hwObject);
+	if (!fb || !hw) {
+		SYSLOG("NBLUE-TRACE", "personality publish FAILED: XML decode framebuffer=%d accelerator=%d", fb != nullptr, hw != nullptr);
+		OSSafeReleaseNULL(fbObject);
+		OSSafeReleaseNULL(hwObject);
+		OSSafeReleaseNULL(errFB);
+		OSSafeReleaseNULL(errHW);
+		return;
+	}
+
+	// The current physical compatible identity may remain 46A6 even while the
+	// device-id donor persona is 9A49. Match both, without rewriting either.
+	auto *match = OSString::withCString("0x9A498086 0x46A68086");
+	if (!match || !fb->setObject("IOPCIPrimaryMatch", match) || !hw->setObject("IOPCIPrimaryMatch", match)) {
+		SYSLOG("NBLUE-TRACE", "personality publish FAILED: dual-ID match setup");
+		OSSafeReleaseNULL(match);
+		OSSafeReleaseNULL(fbObject);
+		OSSafeReleaseNULL(hwObject);
+		OSSafeReleaseNULL(errFB);
+		OSSafeReleaseNULL(errHW);
+		return;
+	}
+	match->release();
+
+	auto *array = OSArray::withCapacity(2);
+	if (!array || !array->setObject(fb) || !array->setObject(hw)) {
+		SYSLOG("NBLUE-TRACE", "personality publish FAILED: array allocation");
+		OSSafeReleaseNULL(array);
+		OSSafeReleaseNULL(fbObject);
+		OSSafeReleaseNULL(hwObject);
+		OSSafeReleaseNULL(errFB);
+		OSSafeReleaseNULL(errHW);
+		return;
+	}
+
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "personality publish CALL count=2 match=9A49+46A6");
+	const bool result = gIOCatalogue->addDrivers(array, true);
+	SYSLOG("NBLUE-TRACE", "personality publish RETURN result=%d", result);
+	array->release();
+	OSSafeReleaseNULL(fbObject);
+	OSSafeReleaseNULL(hwObject);
+	OSSafeReleaseNULL(errFB);
+	OSSafeReleaseNULL(errHW);
 }
-
-
-
-
 
 bool NBlue::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 	
