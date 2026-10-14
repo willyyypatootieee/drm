@@ -10,10 +10,10 @@ static const char *pathG11FBT = "/Library/Extensions/AppleIntelTGLGraphicsFrameb
 
 static const char *pathG11HW =
     "/System/Library/Extensions/AppleIntelICLGraphics.kext/Contents/MacOS/AppleIntelICLGraphics";
-static const char *pathG11HWT =
-	"/System/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics";
-static const char *pathG11HWTe =
-	"/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics";
+static const char *pathsG11HWT[] = {
+	"/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics",
+	"/System/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics",
+};
 
 static KernelPatcher::KextInfo kextG11FB {"com.apple.driver.AppleIntelICLLPGraphicsFramebuffer", &pathG11FB, 1, {}, {},
     KernelPatcher::KextInfo::Unloaded};
@@ -22,13 +22,11 @@ static KernelPatcher::KextInfo kextG11FBT {"com.xxxxx.driver.AppleIntelTGLGraphi
 
 static KernelPatcher::KextInfo kextG11HW {"com.apple.driver.AppleIntelICLGraphics", &pathG11HW, 1, {}, {},
     KernelPatcher::KextInfo::Unloaded};
-// The staged external donor is deliberately namespaced com.xxxxx.driver.
-// Register that actual ID for the two possible donor locations; Lilu matches
-// by CFBundleIdentifier before the path is used to select the loaded image.
-static KernelPatcher::KextInfo kextG11HWT {"com.xxxxx.driver.AppleIntelTGLGraphics", &pathG11HWT, 1, {}, {},
-	KernelPatcher::KextInfo::Unloaded};
-static KernelPatcher::KextInfo kextG11HWTe {"com.xxxxx.driver.AppleIntelTGLGraphics", &pathG11HWTe, 1, {}, {},
-	KernelPatcher::KextInfo::Unloaded};
+// The staged donor is deliberately namespaced com.xxxxx.driver.  One
+// KextInfo watches the actual bundle ID at either supported location; two
+// registrations with an identical ID would make the load index ambiguous.
+static KernelPatcher::KextInfo kextG11HWT {"com.xxxxx.driver.AppleIntelTGLGraphics", pathsG11HWT, arrsize(pathsG11HWT),
+	{false, false, false, true}, {}, KernelPatcher::KextInfo::Unloaded};
 
 
 //globals
@@ -62,7 +60,6 @@ void Gen11::init() {
 	
     lilu.onKextLoadForce(&kextG11HW);
 	lilu.onKextLoadForce(&kextG11HWT);
-	lilu.onKextLoadForce(&kextG11HWTe);
 }
 
 bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
@@ -575,12 +572,10 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		return true;
 		
 		
-	} else if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
-		// TGL donor. Both location registrations use the same real donor ID;
-		// select one deterministic descriptor for lookup patches because the
-		// binary is identical and Lilu has already identified the load index.
+	} else if (kextG11HWT.loadIndex == index) {
+		// The namespaced external donor was located through the one watcher above.
 		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics kext ENTER index=%zu donor-id=com.xxxxx.driver.AppleIntelTGLGraphics", index);
-		auto kext=kextG11HWTe;
+		auto kext=kextG11HWT;
 		
 		
 		KernelPatcher::RouteRequest requests[] = {
