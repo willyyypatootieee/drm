@@ -216,13 +216,15 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		SYSLOG("nblue", "AppleIntelTGLGraphicsFramebuffer");
 		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer kext ENTER index=%zu", index);
 		
-		bool isprod=false;
-		auto prod=patcher.solveSymbol(index, "__ZN24AppleIntelBaseController5startEP9IOService", address, size);
-		if (!prod) isprod=true;
-		kexttgld=!isprod;
-		kexttglp=isprod;
-		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer variant=%s", isprod ? "production" : "debug");
-		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 1/6 variant=%s base-start=0x%llx", isprod ? "production" : "debug", prod);
+		// The exact external donor payload is known to export
+		// AppleIntelBaseController::start (SHA-256 285ee7a9...). It uses the
+		// debug/base-controller ABI. Avoid solveSymbol while its image is being
+		// registered; that extra symbol walk is unnecessary and may re-enter the
+		// kext-load path.
+		const bool isprod = false;
+		kexttgld = true;
+		kexttglp = false;
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 1/6 ABI=debug fixed external-donor=285ee7a9");
 		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 2/6 resolve symbols BEGIN");
 		
 		if (isprod) {
