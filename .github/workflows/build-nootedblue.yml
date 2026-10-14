@@ -1,0 +1,90 @@
+name: Build isolated NootedBlue comparison kext
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - adlp-sequoia-nblue-allow3d-20261014
+    paths:
+      - NootedBlue/**
+      - NootedBlue.xcodeproj/**
+      - Lilu.kext/**
+      - MacKernelSDK/**
+      - .github/workflows/build-nootedblue.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS / Release / x86_64
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@v4
+
+      - name: Display source and toolchain identity
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          git status --short
+          sw_vers
+          xcodebuild -version
+
+      - name: Build unsigned isolated comparison kext
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project NootedBlue.xcodeproj \
+            -target NootedBlue \
+            -configuration Release \
+            -sdk macosx \
+            -arch x86_64 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NootedBlue-build" \
+            build
+
+      - name: Validate and package comparison artifact
+        env:
+          BUILD_DIR: ${{ runner.temp }}/NootedBlue-build
+        run: |
+          set -euo pipefail
+          kext="$BUILD_DIR/NootedBlue.kext"
+          binary="$kext/Contents/MacOS/NootedBlue"
+          test -d "$kext"
+          test -f "$binary"
+          plutil -lint "$kext/Contents/Info.plist"
+          file "$binary"
+          lipo -archs "$binary" | grep -Fx x86_64
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$kext" dist/NootedBlue-ADLP-ALLOW3D-COMPARISON.kext.zip
+          shasum -a 256 dist/NootedBlue-ADLP-ALLOW3D-COMPARISON.kext.zip | tee dist/SHA256SUMS.txt
+          shasum -a 256 "$binary" | tee -a dist/SHA256SUMS.txt
+          {
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "source_ref=${GITHUB_REF}"
+            echo "source_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '--- upstream-base ---'
+            git log -1 --format='%H %s'
+            echo
+            echo '--- xcode ---'
+            xcodebuild -version
+            echo
+            echo '--- bundle ---'
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$kext/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$kext/Contents/Info.plist"
+            file "$binary"
+            lipo -archs "$binary"
+          } > dist/BUILD-INFO.txt
+
+      - name: Upload comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NootedBlue-ADLP-ALLOW3D-COMPARISON-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
