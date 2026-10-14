@@ -134,8 +134,8 @@ void NBlue::publishTGLDriverPersonalities()
 		return;
 	}
 
-	auto *driversXMLFB = getFWByName(this->tglid ? "Driverf2.xml" : "Driverf1.xml");
-	auto *driversXMLHW = getFWByName(this->tglid ? "Drivera3.xml" : "Drivera1.xml");
+	const auto driversXMLFB = getFWByName(this->tglid ? "Driverf2.xml" : "Driverf1.xml");
+	const auto driversXMLHW = getFWByName(this->tglid ? "Drivera3.xml" : "Drivera1.xml");
 	if (!driversXMLFB.data || !driversXMLHW.data) {
 		SYSLOG("NBLUE-TRACE", "personality publish FAILED: embedded profile unavailable");
 		IOFree(driversXMLFB.data, driversXMLFB.size);
