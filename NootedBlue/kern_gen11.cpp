@@ -47,6 +47,10 @@ bool isguc=false;
 
 Gen11 *Gen11::callback = nullptr;
 
+static inline bool nblueADLPTraceEnabled() {
+	return checkKernelArgument("-NBlueADLPTrace");
+}
+
 void Gen11::init() {
 	callback = this;
 	
@@ -210,12 +214,14 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 	}	else if (kextG11FBT.loadIndex == index) {
 
 		SYSLOG("nblue", "AppleIntelTGLGraphicsFramebuffer");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer kext ENTER index=%zu", index);
 		
 		bool isprod=false;
 		auto prod=patcher.solveSymbol(index, "__ZN24AppleIntelBaseController5startEP9IOService", address, size);
 		if (!prod) isprod=true;
 		kexttgld=!isprod;
 		kexttglp=isprod;
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer variant=%s", isprod ? "production" : "debug");
 		
 		if (isprod) {
 			KernelPatcher::SolveRequest solveRequestsp[] = {
@@ -488,6 +494,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			};
 			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11FBT Failed to apply dbg patches!");
 		}
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer PATCHED");
 		return true;
 		
 	}     else if (kextG11HW.loadIndex == index) {
@@ -567,6 +574,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		
 	} else if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
 		//tgl
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics kext ENTER index=%zu source=%s", index, kextG11HWT.loadIndex == index ? "System" : "Library");
 		auto kext=kextG11HWT.loadIndex == index ? kextG11HWT: kextG11HWTe;
 		
 		
@@ -638,6 +646,14 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			
 		};
 		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route symbols");
+		if (nblueADLPTraceEnabled()) {
+			KernelPatcher::RouteRequest traceRoute[] = {
+				{"__ZN16IntelAccelerator5startEP9IOService", traceIntelAcceleratorStart, this->otraceIntelAcceleratorStart},
+			};
+			if (patcher.routeMultipleLong(index, traceRoute, address, size))
+				SYSLOG("NBLUE-TRACE", "IntelAccelerator::start trace ARMED");
+			else { patcher.clearError(); SYSLOG("NBLUE-TRACE", "IntelAccelerator::start trace UNAVAILABLE"); }
+		}
 		
 		// 8 subslices
 		static const uint8_t f2[] = {0x8b, 0x5d, 0xd0, 0xf3, 0x0f, 0xb8, 0xf3, 0x01, 0xf6, 0x41, 0x89, 0xb7, 0x58, 0x11, 0x00, 0x00};
@@ -678,6 +694,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		
 		
 		DBGLOG("nblue", "Loaded AppleIntelTGLGraphics!");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL graphics PATCHED");
 		return true;
 	}
 
@@ -14939,6 +14956,7 @@ static void tgl_setup_private_ppat(struct intel_display *display)
 
 unsigned long Gen11::loadGuCBinary(void *that)
 {
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "loadGuCBinary ENTER already-loaded=%d", gucp != nullptr);
 	if (gucp!=nullptr) return 1;
 	isguc=true;
 	struct drm_i915_private *i915=NBlue::callback->i915b;
@@ -14992,6 +15010,7 @@ unsigned long Gen11::loadGuCBinary(void *that)
 		
 	}
 	
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "loadGuCBinary firmware selected size=%zu adlp-p=%d adl-s=%d", fw.size, display->platform.alderlake_p, display->platform.alderlake_s);
 	if (!fw.data || fw.size == 0) return 0;
 	if (fw.size < sizeof(uc_css_header)) return 0;
 	
@@ -16167,6 +16186,22 @@ static struct intel_engine_cs *find_engine_state(struct intel_gt *gt, u8 engine_
 
 
 
+unsigned long Gen11::traceIntelAcceleratorStart(void *that, void *provider)
+{
+	auto *service = static_cast<IOService *>(that);
+	auto *providerService = static_cast<IOService *>(provider);
+	const char *serviceName = service ? service->getName() : "<null>";
+	const char *providerName = providerService ? providerService->getName() : "<null>";
+	const char *providerClass = (providerService && providerService->getMetaClass()) ? providerService->getMetaClass()->getClassName() : "<null>";
+	SYSLOG("NBLUE-TRACE", "IntelAccelerator::start ENTER service=%s provider=%s class=%s state=0x%llx", serviceName, providerName, providerClass, (unsigned long long)(service ? service->getState() : 0));
+	auto ret = FunctionCast(traceIntelAcceleratorStart, callback->otraceIntelAcceleratorStart)(that, provider);
+	auto *actualProvider = service ? service->getProvider() : nullptr;
+	const char *actualName = actualProvider ? actualProvider->getName() : "<null>";
+	const char *actualClass = (actualProvider && actualProvider->getMetaClass()) ? actualProvider->getMetaClass()->getClassName() : "<null>";
+	SYSLOG("NBLUE-TRACE", "IntelAccelerator::start RETURN ret=%lu state=0x%llx provider=%s class=%s", ret, (unsigned long long)(service ? service->getState() : 0), actualName, actualClass);
+	return ret;
+}
+
 unsigned long  Gen11::startGraphicsEngine(void *that)
 {
 	struct drm_i915_private *i915 = NBlue::callback->i915b;
@@ -16176,6 +16211,7 @@ unsigned long  Gen11::startGraphicsEngine(void *that)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id2;
 	
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "startGraphicsEngine ENTER");
 	if (!seng)
 	{
 		seng=true;
@@ -16183,6 +16219,7 @@ unsigned long  Gen11::startGraphicsEngine(void *that)
 	}
 	
 	auto ret= FunctionCast(startGraphicsEngine, callback->ostartGraphicsEngine)( that);
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "startGraphicsEngine RETURN ret=%lu", ret);
 	if (!ret) panic ("startGraphicsEngine");
 	return ret;
 }
@@ -17001,6 +17038,7 @@ fail_sem:
 
 uint64_t Gen11::loadFirmware(void *that)
 {
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "loadFirmware ENTER");
 	struct drm_i915_private *i915 = NBlue::callback->i915b;
 	struct intel_gt *gt = to_gt(i915);
 	struct intel_guc *guc = gt_to_guc(gt);
@@ -17027,6 +17065,7 @@ uint64_t Gen11::loadFirmware(void *that)
 		Gen11::callback->SafeForceWake(m_accelerator, false, 7);
 	}
 	
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "loadFirmware RETURN ret=%llu", (unsigned long long)ret);
 	return ret;
 }
 

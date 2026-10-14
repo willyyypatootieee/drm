@@ -807,6 +807,10 @@ public:
 	
 	static unsigned long  startGraphicsEngine(void *that);
 	mach_vm_address_t ostartGraphicsEngine {};
+
+	// Explicit diagnostic route: observes the donor accelerator start path only.
+	static unsigned long traceIntelAcceleratorStart(void *that, void *provider);
+	mach_vm_address_t otraceIntelAcceleratorStart {};
 	
 	static void  initHardwareStatusPageRegisters(void *that);
 	mach_vm_address_t oinitHardwareStatusPageRegisters {};

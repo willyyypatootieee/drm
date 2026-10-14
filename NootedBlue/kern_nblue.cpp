@@ -33,6 +33,10 @@ NBlue *NBlue::callback = nullptr;
 
 static Gen11 gen11;
 static DYLDPatches dyldpatches;
+
+static inline bool nblueADLPTraceEnabled() {
+	return checkKernelArgument("-NBlueADLPTrace");
+}
 static HDMI agfxhda;
 
 void NBlue::init() {
@@ -59,6 +63,7 @@ void NBlue::init() {
 
 
 void NBlue::processPatcher(KernelPatcher &patcher) {
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "patcher ENTER");
     auto *devInfo = DeviceInfo::create();
     if (devInfo) {
         devInfo->processSwitchOff();
@@ -100,6 +105,7 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 		WIOKit::getOSDataValue(this->iGPU, "device-id", device);
 		this->tglid=device==0x9a49;
 		this->iclid=device==0x8a52;
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "IGPU ready pci-device=0x%08x injected-device=0x%08x revision=0x%x tgl=%d icl=%d", this->deviceId, device, this->pciRevision, this->tglid, this->iclid);
 		if(!this->iclid && !this->tglid) panic ("tglid=device==0x9a49 iclid=device==0x8a52");
 		
 		KernelPatcher::routeVirtual(this->iGPU, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &orgConfigRead16);
@@ -118,6 +124,7 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 										this->orgAddDrivers};
 	PANIC_COND(!patcher.routeMultipleLong(KernelPatcher::KernelID, &request, 1), "DriverInjector",
 			   "Failed to route addDrivers");
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "patcher READY addDrivers route installed");
 	
 	
 	
@@ -125,10 +132,11 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 
 bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool doNubMatching)
 {
-	
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers ENTER input-count=%u nub=%d tgl=%d icl=%d", array ? array->getCount() : 0, doNubMatching, callback ? callback->tglid : 0, callback ? callback->iclid : 0);
 	OSArray *tdrivers= array;
 	bool doNub=doNubMatching;
 	int ok=0;
+	int tcap=0;
 	vnode_t vnode = NULLVP;
 	vfs_context_t ctxt = vfs_context_create(nullptr);
 	errno_t err = vnode_lookup("/usr/bin/sudo", 0, &vnode, ctxt);
@@ -152,7 +160,6 @@ bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool do
 			if (ok) ok2=1;
 		
 	
-		int tcap=0;
 		if (NBlue::callback->tglid || NBlue::callback->iclid) {
 
 				const auto driversXML = getFWByName(ok ? "Driverf2.xml":"Driverf1.xml");
@@ -247,7 +254,10 @@ bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool do
 		
 	}
 
-	return FunctionCast(wrapAddDrivers, callback->orgAddDrivers)(self, array, doNub);
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers CALL injected-count=%d nub=%d", tcap, doNub);
+	auto ret = FunctionCast(wrapAddDrivers, callback->orgAddDrivers)(self, array, doNub);
+	if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "addDrivers RETURN ret=%d", ret);
+	return ret;
 }
 
 

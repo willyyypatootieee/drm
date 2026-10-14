@@ -1,0 +1,84 @@
+name: Build NootedBlue ADL-P trace comparison kext
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - adlp-sequoia-nblue-trace-20261014
+    paths:
+      - NootedBlue/**
+      - NootedBlue.xcodeproj/**
+      - Lilu.kext/**
+      - MacKernelSDK/**
+      - .github/workflows/build-nootedblue-trace.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS / Release / x86_64
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build trace kext
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          sw_vers
+          xcodebuild -version
+          xcodebuild \
+            -project NootedBlue.xcodeproj \
+            -target NootedBlue \
+            -configuration Release \
+            -sdk macosx \
+            -arch x86_64 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NootedBlue-build" \
+            build
+
+      - name: Validate and package trace artifact
+        env:
+          BUILD_DIR: ${{ runner.temp }}/NootedBlue-build
+        run: |
+          set -euo pipefail
+          kext="$BUILD_DIR/NootedBlue.kext"
+          binary="$kext/Contents/MacOS/NootedBlue"
+          test -d "$kext"
+          test -f "$binary"
+          plutil -lint "$kext/Contents/Info.plist"
+          file "$binary"
+          lipo -archs "$binary" | grep -Fx x86_64
+          strings "$binary" | grep -F 'NBLUE-TRACE' >/dev/null
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$kext" dist/NootedBlue-ADLP-TRACE.kext.zip
+          shasum -a 256 dist/NootedBlue-ADLP-TRACE.kext.zip | tee dist/SHA256SUMS.txt
+          shasum -a 256 "$binary" | tee -a dist/SHA256SUMS.txt
+          {
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "upstream_base=abea07697f43612b4cce3579eb30b4f319bb257c"
+            echo "source_ref=${GITHUB_REF}"
+            echo "source_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "trace_argument=-NBlueADLPTrace"
+            echo "driver_gate_argument=-allow3d"
+            echo
+            echo '--- xcode ---'
+            xcodebuild -version
+            echo
+            echo '--- bundle ---'
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$kext/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$kext/Contents/Info.plist"
+            file "$binary"
+            lipo -archs "$binary"
+          } > dist/BUILD-INFO.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NootedBlue-ADLP-TRACE-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
