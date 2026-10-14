@@ -222,6 +222,8 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		kexttgld=!isprod;
 		kexttglp=isprod;
 		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer variant=%s", isprod ? "production" : "debug");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 1/6 variant=%s base-start=0x%llx", isprod ? "production" : "debug", prod);
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 2/6 resolve symbols BEGIN");
 		
 		if (isprod) {
 			KernelPatcher::SolveRequest solveRequestsp[] = {
@@ -242,6 +244,8 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		}
 
 		
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 2/6 resolve symbols END");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 3/6 base routes BEGIN");
 		KernelPatcher::RouteRequest requests[] = {
 			{"__ZN16AppleIntelScaler4initE10IGScalerID", AppleIntelScalerinit,this->oAppleIntelScalerinit},
 			{"__ZN15AppleIntelPlane4initE9IGPlaneID", AppleIntelPlaneinit,this->oAppleIntelPlaneinit},
@@ -307,6 +311,8 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		};
 
 		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route dp symbols");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 3/6 base routes END");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 4/6 variant routes BEGIN");
 		
 		if (isprod) {
 			KernelPatcher::RouteRequest requestsp[] = {
@@ -337,6 +343,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 				
 			};
 			PANIC_COND(!patcher.routeMultipleLong(index, requestsp, address, size), "nblue","Failed to route p symbols");
+			if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 4/6 variant routes END");
 			
 		} else //debug version
 		{
@@ -368,10 +375,13 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 				
 			};
 			PANIC_COND(!patcher.routeMultipleLong(index, requestsd, address, size), "nblue","Failed to route d symbols");
+			if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 4/6 variant routes END");
 		}
 		
 
 		
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 5/6 binary patch table READY");
+
 		//ReadRegister64
 		static const uint8_t f7[]= {0x83, 0xc0, 0xfc, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0xca, 0xf5, 0x0c, 0x00};
 		static const uint8_t r7[]= {0x83, 0xc0, 0xf8, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0xca, 0xf5, 0x0c, 0x00};
@@ -458,6 +468,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 		
 		
 		if (isprod){
+			if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 6/6 production patches BEGIN");
 			LookupPatchPlus const patchesp[] = {// tgl production kext
 				{&kextG11FBT, f7p, r7p, arrsize(f7p),	1},
 				{&kextG11FBT, f8p, r8p, arrsize(f8p),	1},
@@ -476,6 +487,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patchesp , address, size), "nblue", "kextG11FBT Failed to apply production patches!");
 		}
 		else {
+			if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint 6/6 debug patches BEGIN");
 			LookupPatchPlus const patches[] = {// tgl debug kext
 				{&kextG11FBT, f7, r7, arrsize(f7),	1},
 				{&kextG11FBT, f8, r8, arrsize(f8),	1},
@@ -494,7 +506,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			};
 			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11FBT Failed to apply dbg patches!");
 		}
-		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "TGL framebuffer PATCHED");
+		if (nblueADLPTraceEnabled()) SYSLOG("NBLUE-TRACE", "FBT checkpoint COMPLETE: TGL framebuffer PATCHED");
 		return true;
 		
 	}     else if (kextG11HW.loadIndex == index) {
